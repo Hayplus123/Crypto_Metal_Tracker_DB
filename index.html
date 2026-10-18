@@ -40,7 +40,7 @@
     .asset-title { font-size: 2rem; font-weight: bold; }
     .unit-tag { font-size: 0.9rem; color: var(--text-muted); font-weight: normal; }
 
-    /* Weekend & Status Banners */
+    /* Banners */
     .market-banner { padding: 12px 18px; background: rgba(245, 158, 11, 0.15); border: 1px solid var(--accent-gold); border-radius: 8px; margin-bottom: 20px; color: var(--accent-gold); font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
     .update-btn { padding: 6px 14px; background-color: var(--accent-blue); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.85rem; }
     .update-btn:hover { opacity: 0.9; }
@@ -101,9 +101,8 @@
   <!-- Main Content -->
   <div class="main-content">
     
-    <!-- Weekend / Market Status Banner -->
     <div id="weekendBanner" class="market-banner hidden">
-      <span>🔔 Notice: Markets are currently closed for the weekend. Prices reflect the latest market close.</span>
+      <span>🔔 Notice: Markets are currently closed for the weekend. Prices reflect latest market close.</span>
       <button class="update-btn" onclick="fetchLiveMarketData()">Check Live Status</button>
     </div>
 
@@ -238,14 +237,20 @@
   <script>
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxvRmdgWOsmqlF5QdJrOHyS1cU0CBTyWwehy15i7M7FaIKqb9Z6yu-_dKK8KjOTCdf9qw/exec";
 
+    const cryptoApiIds = {
+      Bitcoin: "bitcoin",
+      Ethereum: "ethereum",
+      Solana: "solana"
+    };
+
     const assetMetadata = {
-      Gold: { price: 4175.00, change: 0.45, unit: "Per 1 OZ", inception: 1970, inceptionPrice: 35.00 },
-      Silver: { price: 57.00, change: 0.85, unit: "Per 1 OZ", inception: 1970, inceptionPrice: 1.50 },
-      Copper: { price: 4.50, change: -0.15, unit: "Per 1 LB", inception: 1970, inceptionPrice: 0.50 },
-      Platinum: { price: 1635.00, change: 0.30, unit: "Per 1 OZ", inception: 1970, inceptionPrice: 150.00 },
-      Bitcoin: { price: 68500.00, change: 2.10, unit: "Per Coin", inception: 2010, inceptionPrice: 0.09 },
-      Ethereum: { price: 3520.00, change: -0.75, unit: "Per Coin", inception: 2015, inceptionPrice: 0.45 },
-      Solana: { price: 185.00, change: 4.20, unit: "Per Coin", inception: 2020, inceptionPrice: 0.50 }
+      Gold: { price: 4175.00, change: 0.45, unit: "Per 1 OZ" },
+      Silver: { price: 57.00, change: 0.85, unit: "Per 1 OZ" },
+      Copper: { price: 4.50, change: -0.15, unit: "Per 1 LB" },
+      Platinum: { price: 1635.00, change: 0.30, unit: "Per 1 OZ" },
+      Bitcoin: { price: 68500.00, change: 2.10, unit: "Per Coin" },
+      Ethereum: { price: 3520.00, change: -0.75, unit: "Per Coin" },
+      Solana: { price: 185.00, change: 4.20, unit: "Per Coin" }
     };
 
     let currentAsset = "Gold";
@@ -265,8 +270,7 @@
     };
 
     function checkWeekend() {
-      const now = new Date();
-      const day = now.getDay();
+      const day = new Date().getDay();
       if (day === 0 || day === 6) {
         document.getElementById("weekendBanner").classList.remove("hidden");
       } else {
@@ -291,7 +295,7 @@
           loadAssetData(currentAsset);
         }
       } catch (e) {
-        console.log("Error fetching live market data via proxy.");
+        console.log("Error fetching live prices.");
       }
     }
 
@@ -349,36 +353,66 @@
       document.getElementById("assetUnit").innerText = data.unit;
       document.getElementById("priceDisplay").innerText = `$${data.price.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-      updateChartData(currentTimeline);
+      fetchAndRenderChartData(asset, currentTimeline);
     }
 
     function setTimeline(tf, btn) {
       document.querySelectorAll(".time-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       currentTimeline = tf;
-      updateChartData(tf);
+      fetchAndRenderChartData(currentAsset, tf);
     }
 
     function initChart() {
       const ctx = document.getElementById('assetChart').getContext('2d');
       chartInstance = new Chart(ctx, {
         type: 'line',
-        data: { labels: [], datasets: [{ label: 'Price (USD)', data: [], borderColor: '#3b82f6', tension: 0.2, fill: true, backgroundColor: 'rgba(59, 130, 246, 0.05)' }] },
+        data: { labels: [], datasets: [{ label: 'Price (USD)', data: [], borderColor: '#3b82f6', tension: 0.1, fill: true, backgroundColor: 'rgba(59, 130, 246, 0.05)' }] },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
       });
     }
 
-    function updateChartData(timeframe) {
-      const meta = assetMetadata[currentAsset];
-      const currentPrice = livePrices[currentAsset].price;
-      
+    async function fetchAndRenderChartData(asset, timeframe) {
+      // If it's crypto, query CoinGecko's market history API directly
+      if (cryptoApiIds[asset]) {
+        let days = "1";
+        if (timeframe === "1W") days = "7";
+        else if (timeframe === "1M") days = "30";
+        else if (timeframe === "1Y") days = "365";
+        else if (timeframe === "10Y" || timeframe === "ALL") days = "max";
+
+        try {
+          const res = await fetch(`https://api.coingecko.com/api/v3/coins/${cryptoApiIds[asset]}/market_chart?vs_currency=usd&days=${days}`);
+          const data = await res.json();
+          if (data.prices && data.prices.length > 0) {
+            // Downsample array points so chart renders quickly
+            const step = Math.max(1, Math.floor(data.prices.length / 30));
+            const sampled = data.prices.filter((_, idx) => idx % step === 0);
+            
+            const labels = sampled.map(p => new Date(p[0]).toLocaleDateString());
+            const points = sampled.map(p => p[1]);
+
+            renderChart(labels, points, timeframe);
+            return;
+          }
+        } catch (e) {
+          console.log("Error pulling live crypto history, using fallback.");
+        }
+      }
+
+      // Fallback/Metals deterministic historical rendering
+      renderDeterministicChart(asset, timeframe);
+    }
+
+    function renderDeterministicChart(asset, timeframe) {
+      const currentPrice = livePrices[asset].price;
       let count = 12;
       let startPrice = currentPrice * 0.98;
       let labels = [];
 
       if (timeframe === '24h') {
         count = 24;
-        startPrice = currentPrice * (1 - (meta.change / 100));
+        startPrice = currentPrice * 0.995;
         labels = Array.from({length: count}, (_, i) => `${i}:00`);
       } else if (timeframe === '1W') {
         count = 7;
@@ -394,15 +428,14 @@
         labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       } else if (timeframe === '10Y') {
         count = 10;
-        startPrice = currentPrice * 0.30;
+        startPrice = currentPrice * 0.35;
         labels = Array.from({length: count}, (_, i) => `${2016 + i}`);
       } else if (timeframe === 'ALL') {
         count = 15;
-        startPrice = meta.inceptionPrice;
+        startPrice = 35.00;
         labels = Array.from({length: count}, (_, i) => `Year ${i+1}`);
       }
 
-      // Smooth deterministic interpolation (No random noise / wiggling)
       const points = [];
       for (let i = 0; i < count; i++) {
         const progress = i / (count - 1);
@@ -410,6 +443,10 @@
         points.push(i === count - 1 ? currentPrice : Math.max(0.01, interpolated));
       }
 
+      renderChart(labels, points, timeframe);
+    }
+
+    function renderChart(labels, points, timeframe) {
       const firstVal = points[0];
       const lastVal = points[points.length - 1];
       const periodChangePct = (((lastVal - firstVal) / firstVal) * 100).toFixed(2);
