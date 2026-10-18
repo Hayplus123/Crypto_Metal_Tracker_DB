@@ -261,13 +261,12 @@
       switchAsset("Gold");
       checkSession();
 
-      // Auto-refresh every 1 minute (60,000 ms)
       setInterval(fetchLiveMarketData, 60000);
     };
 
     function checkWeekend() {
       const now = new Date();
-      const day = now.getDay(); // 0 is Sunday, 6 is Saturday
+      const day = now.getDay();
       if (day === 0 || day === 6) {
         document.getElementById("weekendBanner").classList.remove("hidden");
       } else {
@@ -403,12 +402,12 @@
         labels = Array.from({length: count}, (_, i) => `Year ${i+1}`);
       }
 
+      // Smooth deterministic interpolation (No random noise / wiggling)
       const points = [];
       for (let i = 0; i < count; i++) {
         const progress = i / (count - 1);
         const interpolated = startPrice + (currentPrice - startPrice) * Math.pow(progress, 1.2);
-        const noise = (Math.random() - 0.5) * (currentPrice * 0.01);
-        points.push(i === count - 1 ? currentPrice : Math.max(0.01, interpolated + noise));
+        points.push(i === count - 1 ? currentPrice : Math.max(0.01, interpolated));
       }
 
       const firstVal = points[0];
