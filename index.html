@@ -40,6 +40,11 @@
     .asset-title { font-size: 2rem; font-weight: bold; }
     .unit-tag { font-size: 0.9rem; color: var(--text-muted); font-weight: normal; }
 
+    /* Weekend & Status Banners */
+    .market-banner { padding: 12px 18px; background: rgba(245, 158, 11, 0.15); border: 1px solid var(--accent-gold); border-radius: 8px; margin-bottom: 20px; color: var(--accent-gold); font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+    .update-btn { padding: 6px 14px; background-color: var(--accent-blue); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.85rem; }
+    .update-btn:hover { opacity: 0.9; }
+
     /* Price Card */
     .price-card { background-color: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 25px; }
     .price-val { font-size: 2.5rem; font-weight: bold; margin-bottom: 8px; }
@@ -71,7 +76,7 @@
 </head>
 <body>
 
-  <!-- Sidebar Nav (Bug-free button lists instead of dropdowns) -->
+  <!-- Sidebar Nav -->
   <div class="sidebar">
     <h2>Asset Tracker</h2>
 
@@ -96,6 +101,12 @@
   <!-- Main Content -->
   <div class="main-content">
     
+    <!-- Weekend / Market Status Banner -->
+    <div id="weekendBanner" class="market-banner hidden">
+      <span>🔔 Notice: Markets are currently closed for the weekend. Prices reflect the latest market close.</span>
+      <button class="update-btn" onclick="fetchLiveMarketData()">Check Live Status</button>
+    </div>
+
     <!-- Dashboard View -->
     <div id="dashboardView">
       <div class="header">
@@ -103,7 +114,10 @@
           <span id="currentAssetTitle">Gold</span>
           <span class="unit-tag" id="assetUnit">(Per 1 OZ)</span>
         </div>
-        <button class="nav-link" onclick="showView('dashboard')" style="padding: 6px 12px; font-size: 0.85rem; margin:0;">Dashboard</button>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <button class="update-btn" onclick="fetchLiveMarketData()">🔄 Update Now</button>
+          <button class="nav-link" onclick="showView('dashboard')" style="padding: 6px 12px; font-size: 0.85rem; margin:0;">Dashboard</button>
+        </div>
       </div>
 
       <div class="price-card">
@@ -134,13 +148,11 @@
         <button class="nav-link" onclick="showView('dashboard')" style="padding: 6px 12px; font-size: 0.85rem; margin:0;">Back to Dashboard</button>
       </div>
 
-      <!-- Signed In State Header -->
       <div id="userLoggedInBadge" class="user-badge hidden">
         Logged in as: <span id="sessionUserName"></span> (<span id="sessionUserEmail"></span>)
         <button onclick="logout()" style="float: right; background: none; border: none; color: var(--red); cursor: pointer; font-weight: bold;">Sign Out</button>
       </div>
 
-      <!-- Sign In / Register Card (Shown if NOT signed in) -->
       <div id="authCard" class="form-card">
         <h3>Sign In / Create Account</h3>
         <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 15px;">Enter your first and last name to log in or create a new account.</p>
@@ -158,18 +170,16 @@
           <input type="email" id="authEmail" placeholder="john@example.com">
         </div>
         
-        <!-- Dynamic Password Input for accounts that have a password -->
         <div class="input-group hidden" id="passwordInputGroup">
           <label>Account Password</label>
           <input type="password" id="authPassword" placeholder="Enter your password">
         </div>
         
-        <button class="btn" id="authActionButton" onclick="handleSignIn()">Sign In</button>
+        <button class="btn" onclick="handleSignIn()">Sign In</button>
         <button class="btn btn-secondary" onclick="handleRegister()">Create New Account</button>
         <span class="link-text" onclick="handleForgotPassword()">Forgot Password?</span>
       </div>
 
-      <!-- Password Setup / Change Card (Shown when signed in) -->
       <div id="passwordCard" class="form-card hidden">
         <h3>Account Security</h3>
         <div class="input-group">
@@ -179,7 +189,6 @@
         <button class="btn" onclick="updatePassword()">Save Password</button>
       </div>
 
-      <!-- Price Alerts Section (ONLY shown if signed in) -->
       <div id="alertsCard" class="form-card hidden">
         <h3>Create Price Alert</h3>
         <div class="input-group">
@@ -247,29 +256,43 @@
 
     window.onload = async () => {
       initChart();
+      checkWeekend();
       await fetchLiveMarketData();
       switchAsset("Gold");
       checkSession();
+
+      // Auto-refresh every 1 minute (60,000 ms)
+      setInterval(fetchLiveMarketData, 60000);
     };
+
+    function checkWeekend() {
+      const now = new Date();
+      const day = now.getDay(); // 0 is Sunday, 6 is Saturday
+      if (day === 0 || day === 6) {
+        document.getElementById("weekendBanner").classList.remove("hidden");
+      } else {
+        document.getElementById("weekendBanner").classList.add("hidden");
+      }
+    }
 
     async function fetchLiveMarketData() {
       try {
-        const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true");
-        const data = await res.json();
-        if (data.bitcoin) {
-          livePrices.Bitcoin.price = data.bitcoin.usd;
-          livePrices.Bitcoin.change = parseFloat(data.bitcoin.usd_24h_change.toFixed(2));
-        }
-        if (data.ethereum) {
-          livePrices.Ethereum.price = data.ethereum.usd;
-          livePrices.Ethereum.change = parseFloat(data.ethereum.usd_24h_change.toFixed(2));
-        }
-        if (data.solana) {
-          livePrices.Solana.price = data.solana.usd;
-          livePrices.Solana.change = parseFloat(data.solana.usd_24h_change.toFixed(2));
+        const res = await fetch(SCRIPT_URL, {
+          method: "POST",
+          body: JSON.stringify({ action: "getLivePrices" })
+        });
+        const result = await res.json();
+        if (result.status === "success" && result.prices) {
+          for (const key in result.prices) {
+            if (livePrices[key]) {
+              livePrices[key].price = result.prices[key].price;
+              livePrices[key].change = result.prices[key].change;
+            }
+          }
+          loadAssetData(currentAsset);
         }
       } catch (e) {
-        console.log("Using baseline pricing.");
+        console.log("Error fetching live market data via proxy.");
       }
     }
 
@@ -313,8 +336,6 @@
 
     function switchAsset(asset) {
       currentAsset = asset;
-      
-      // Update active state on sidebar buttons
       document.querySelectorAll(".asset-btn").forEach(b => b.classList.remove("active"));
       const btn = document.getElementById(`btn-${asset}`);
       if (btn) btn.classList.add("active");
@@ -378,11 +399,10 @@
         labels = Array.from({length: count}, (_, i) => `${2016 + i}`);
       } else if (timeframe === 'ALL') {
         count = 15;
-        startPrice = meta.inceptionPrice; // Accurate historical inception price!
+        startPrice = meta.inceptionPrice;
         labels = Array.from({length: count}, (_, i) => `Year ${i+1}`);
       }
 
-      // Generate smooth trend data
       const points = [];
       for (let i = 0; i < count; i++) {
         const progress = i / (count - 1);
@@ -391,7 +411,6 @@
         points.push(i === count - 1 ? currentPrice : Math.max(0.01, interpolated + noise));
       }
 
-      // Dynamically calculate period percentage change
       const firstVal = points[0];
       const lastVal = points[points.length - 1];
       const periodChangePct = (((lastVal - firstVal) / firstVal) * 100).toFixed(2);
@@ -425,19 +444,13 @@
         const result = await res.json();
 
         if (result.status === "password_required") {
-          // Password is set on this account, reveal password input field
           document.getElementById("passwordInputGroup").classList.remove("hidden");
-          alert("This account has a password set. Please enter your password and click Sign In again.");
+          alert("This account requires a password. Please enter it and click Sign In again.");
           return;
         }
 
         if (result.status === "success") {
-          currentUser = {
-            userId: result.userId,
-            firstName: result.firstName || firstName,
-            lastName: result.lastName || lastName,
-            email: result.email
-          };
+          currentUser = { userId: result.userId, firstName: result.firstName || firstName, lastName: result.lastName || lastName, email: result.email };
           localStorage.setItem("tracker_user", JSON.stringify(currentUser));
           renderLoggedInState();
           alert("Logged in successfully!");
@@ -467,12 +480,7 @@
         const result = await res.json();
 
         if (result.status === "success") {
-          currentUser = {
-            userId: result.userId,
-            firstName: firstName,
-            lastName: lastName,
-            email: email
-          };
+          currentUser = { userId: result.userId, firstName: firstName, lastName: lastName, email: email };
           localStorage.setItem("tracker_user", JSON.stringify(currentUser));
           renderLoggedInState();
           alert("Account created and logged in successfully!");
@@ -522,7 +530,6 @@
 
     async function saveAlertPreference() {
       if (!currentUser) return;
-
       const payload = {
         action: "saveAlert",
         userId: currentUser.userId,
