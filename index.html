@@ -287,11 +287,17 @@
             }
           }
           loadAssetData(currentAsset);
+          console.log("Prices successfully updated!");
+        } else {
+          alert("Server returned an error: " + (result.message || "Unknown error"));
         }
       } catch (e) {
-        console.log("Error fetching live prices.");
+        console.error("Fetch error:", e);
+        alert("Failed to connect to Apps Script backend. Check console for details.");
       }
-    }
+    
+          loadAssetData(currentAsset);
+        }
 
     function checkSession() {
       const savedUser = localStorage.getItem("tracker_user");
