@@ -120,7 +120,7 @@
       </div>
 
       <div class="price-card">
-        <div class="price-val" id="priceDisplay">$4,175.00</div>
+        <div class="price-val" id="priceDisplay">$4,122.88</div>
         <div id="changeBadge" class="change-badge up">
           <span id="arrow">▲</span> <span id="changeVal">+0.45%</span>
         </div>
@@ -238,13 +238,13 @@
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxvRmdgWOsmqlF5QdJrOHyS1cU0CBTyWwehy15i7M7FaIKqb9Z6yu-_dKK8KjOTCdf9qw/exec";
 
     const assetMetadata = {
-      Gold: { price: 4175.00, change: 0.45, unit: "Per 1 OZ", inceptionPrice: 35.00 },
-      Silver: { price: 57.00, change: 0.85, unit: "Per 1 OZ", inceptionPrice: 1.50 },
-      Copper: { price: 4.50, change: -0.15, unit: "Per 1 LB", inceptionPrice: 0.50 },
-      Platinum: { price: 1635.00, change: 0.30, unit: "Per 1 OZ", inceptionPrice: 150.00 },
-      Bitcoin: { price: 68500.00, change: 2.10, unit: "Per Coin", inceptionPrice: 0.09 },
-      Ethereum: { price: 3520.00, change: -0.75, unit: "Per Coin", inceptionPrice: 0.45 },
-      Solana: { price: 185.00, change: 4.20, unit: "Per Coin", inceptionPrice: 0.50 }
+      Gold: { price: 4122.88, change: 0.45, unit: "Per 1 OZ" },
+      Silver: { price: 57.00, change: 0.85, unit: "Per 1 OZ" },
+      Copper: { price: 4.50, change: -0.15, unit: "Per 1 LB" },
+      Platinum: { price: 1635.00, change: 0.30, unit: "Per 1 OZ" },
+      Bitcoin: { price: 68500.00, change: 2.10, unit: "Per Coin" },
+      Ethereum: { price: 3520.00, change: -0.75, unit: "Per Coin" },
+      Solana: { price: 185.00, change: 4.20, unit: "Per Coin" }
     };
 
     let currentAsset = "Gold";
@@ -347,14 +347,14 @@
       document.getElementById("assetUnit").innerText = data.unit;
       document.getElementById("priceDisplay").innerText = `$${data.price.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-      renderRealisticMarketChart(asset, currentTimeline);
+      fetchAndRenderChartData(asset, currentTimeline);
     }
 
     function setTimeline(tf, btn) {
       document.querySelectorAll(".time-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
       currentTimeline = tf;
-      renderRealisticMarketChart(currentAsset, tf);
+      fetchAndRenderChartData(currentAsset, tf);
     }
 
     function initChart() {
@@ -366,59 +366,90 @@
       });
     }
 
-    function renderRealisticMarketChart(asset, timeframe) {
-      const meta = assetMetadata[asset];
+    async function fetchAndRenderChartData(asset, timeframe) {
+      // For Crypto assets, fetch real historical data via Google Apps Script proxy
+      if (asset === "Bitcoin" || asset === "Ethereum" || asset === "Solana") {
+        try {
+          const res = await fetch(SCRIPT_URL, {
+            method: "POST",
+            body: JSON.stringify({ action: "getCryptoHistory", asset: asset })
+          });
+          const result = await res.json();
+          if (result.status === "success" && result.prices) {
+            let prices = result.prices;
+            
+            // Filter down data points based on timeframe selection
+            let cutoffTime = 0;
+            const now = new Date().getTime();
+            if (timeframe === '24h') cutoffTime = now - (24 * 60 * 60 * 1000);
+            else if (timeframe === '1W') cutoffTime = now - (7 * 24 * 60 * 60 * 1000);
+            else if (timeframe === '1M') cutoffTime = now - (30 * 24 * 60 * 60 * 1000);
+            else if (timeframe === '1Y') cutoffTime = now - (365 * 24 * 60 * 60 * 1000);
+            else if (timeframe === '10Y') cutoffTime = now - (10 * 365 * 24 * 60 * 60 * 1000);
+
+            if (cutoffTime > 0) {
+              prices = prices.filter(p => p[0] >= cutoffTime);
+            }
+
+            // Downsample array points so chart renders cleanly
+            const step = Math.max(1, Math.floor(prices.length / 40));
+            const sampled = prices.filter((_, idx) => idx % step === 0);
+
+            const labels = sampled.map(p => new Date(p[0]).toLocaleDateString());
+            const points = sampled.map(p => p[1]);
+
+            renderChart(labels, points, timeframe);
+            return;
+          }
+        } catch (e) {
+          console.log("Error fetching proxy crypto history, using fallback.");
+        }
+      }
+
+      // Fallback deterministic chart for metals or if proxy fails
+      renderDeterministicChart(asset, timeframe);
+    }
+
+    function renderDeterministicChart(asset, timeframe) {
       const currentPrice = livePrices[asset].price;
-      
       let count = 12;
+      let startPrice = currentPrice * 0.90;
       let labels = [];
 
       if (timeframe === '24h') {
         count = 24;
+        startPrice = currentPrice * 0.99;
         labels = Array.from({length: count}, (_, i) => `${i}:00`);
       } else if (timeframe === '1W') {
         count = 7;
+        startPrice = currentPrice * 0.95;
         labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
       } else if (timeframe === '1M') {
         count = 30;
+        startPrice = currentPrice * 0.92;
         labels = Array.from({length: count}, (_, i) => `Day ${i+1}`);
       } else if (timeframe === '1Y') {
         count = 12;
+        startPrice = currentPrice * 0.80;
         labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      } else if (timeframe === '10Y') {
-        count = 10;
-        labels = Array.from({length: count}, (_, i) => `${2016 + i}`);
-      } else if (timeframe === 'ALL') {
-        count = 20;
+      } else if (timeframe === '10Y' || timeframe === 'ALL') {
+        count = 15;
+        startPrice = currentPrice * 0.40;
         labels = Array.from({length: count}, (_, i) => `Phase ${i+1}`);
       }
 
-      // Generate realistic cyclic history with actual dips, drawdowns, and crashes
       const points = [];
-      const baseStart = timeframe === 'ALL' ? meta.inceptionPrice : currentPrice * 0.70;
-
       for (let i = 0; i < count; i++) {
         const progress = i / (count - 1);
-        
-        // Add sine wave multipliers to simulate major multi-year dips, bear markets, and corrections
-        let cycleDip = 1.0;
-        if (timeframe === 'ALL' || timeframe === '10Y') {
-          // Creates realistic mid-cycle crashes/dips
-          cycleDip = 1.0 - (0.35 * Math.sin(progress * Math.PI * 3));
-        } else if (timeframe === '1Y') {
-          cycleDip = 1.0 - (0.15 * Math.sin(progress * Math.PI * 2));
-        }
-
-        let val;
-        if (i === count - 1) {
-          val = currentPrice; // Ensure the final point matches live price exactly
-        } else {
-          const trend = baseStart + (currentPrice - baseStart) * Math.pow(progress, 1.4);
-          val = Math.max(meta.inceptionPrice * 0.5, trend * cycleDip);
-        }
-        points.push(val);
+        const cycleDip = 1.0 - (0.15 * Math.sin(progress * Math.PI * 3));
+        const interpolated = startPrice + (currentPrice - startPrice) * Math.pow(progress, 1.2);
+        points.push(i === count - 1 ? currentPrice : Math.max(0.01, interpolated * cycleDip));
       }
 
+      renderChart(labels, points, timeframe);
+    }
+
+    function renderChart(labels, points, timeframe) {
       const firstVal = points[0];
       const lastVal = points[points.length - 1];
       const periodChangePct = (((lastVal - firstVal) / firstVal) * 100).toFixed(2);
